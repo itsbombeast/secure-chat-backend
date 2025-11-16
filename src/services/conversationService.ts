@@ -1,119 +1,103 @@
 import { PrismaClient, ConversationRole } from "@prisma/client";
+export const prisma = new PrismaClient();
 
-const prisma = new PrismaClient();
 
-export const listUserConversations = async (userId: string) => {
-  return prisma.conversationMember.findMany({
-    where: { userId },
-    include: {
-      conversation: {
-        include: {
-          members: {
-            include: { user: { select: { id: true, username: true, publicKeyPem: true } } }
-          }
-        }
-      }
-    }
-  });
-};
-
+// DIRECT CONVERSATION
 export const createDirectConversation = async (userId: string, otherUserId: string) => {
-  // Check if one already exists
+
   const existing = await prisma.conversation.findFirst({
     where: {
       isGroup: false,
-      members: {
-  create: [
-    {
-      userId,
-      role: "MEMBER"
-    },
-    {
-      userId: otherUserId,
-      role: "MEMBER"
-    }
-  ]
-}
-
-    },
-    include: {
-      members: true
+      AND: [
+        { members: { some: { userId } } },
+        { members: { some: { userId: otherUserId } } }
+      ]
     }
   });
+
   if (existing) return existing;
 
-  const convo = await prisma.conversation.create({
+  const conversation = await prisma.conversation.create({
     data: {
       isGroup: false,
       members: {
         create: [
-          { userId, role: ConversationRole.MEMBER },
-          { userId: otherUserId, role: ConversationRole.MEMBER }
+          {
+            role: ConversationRole.MEMBER,
+            user: { connect: { id: userId } }
+          },
+          {
+            role: ConversationRole.MEMBER,
+            user: { connect: { id: otherUserId } }
+          }
         ]
       }
+    },
+    include: {
+      members: { include: { user: true } }
     }
   });
-  return convo;
+
+  return conversation;
 };
 
+
+
+// GROUP CONVERSATION
 export const createGroupConversation = async (
   creatorId: string,
   name: string,
   description: string | undefined,
   memberIds: string[]
 ) => {
-  const convo = await prisma.conversation.create({
+
+  const members = [
+    {
+      role: ConversationRole.ADMIN,
+      user: { connect: { id: creatorId } }
+    },
+    ...memberIds
+      .filter((id) => id !== creatorId)
+      .map((id) => ({
+        role: ConversationRole.MEMBER,
+        user: { connect: { id } }
+      }))
+  ];
+
+  const conversation = await prisma.conversation.create({
     data: {
       isGroup: true,
       name,
       description,
       createdById: creatorId,
       members: {
-        create: [
-          {
-            userId: creatorId,
-            role: "ADMIN"     // MUST be string!
-          },
-          ...memberIds
-            .filter((id) => id !== creatorId)
-            .map((id) => ({
-              userId: id,
-              role: "MEMBER"  // MUST be string!
-            }))
-        ]
+        create: members
       }
+    },
+    include: {
+      members: { include: { user: true } }
     }
   });
 
-  return convo;
+  return conversation;
 };
 
 
-export const addMemberToGroup = async (conversationId: string, adminId: string, newMemberId: string) => {
-  const adminMember = await prisma.conversationMember.findFirst({
-    where: { conversationId, userId: adminId, role: ConversationRole.ADMIN }
-  });
-  if (!adminMember) throw Object.assign(new Error("Forbidden"), { status: 403 });
 
-  return prisma.conversationMember.create({
-    data: {
-      conversationId,
-      userId: newMemberId,
-      role: ConversationRole.MEMBER
+// GET USER CONVERSATIONS
+export const getUserConversations = async (userId: string) => {
+  return prisma.conversationMember.findMany({
+    where: { userId },
+    include: {
+      conversation: {
+        include: {
+          members: { include: { user: true } }
+        }
+      }
+    },
+    orderBy: {
+      conversation: { updatedAt: "desc" }
     }
   });
 };
 
-export const removeMemberFromGroup = async (conversationId: string, adminId: string, memberId: string) => {
-  const adminMember = await prisma.conversationMember.findFirst({
-    where: { conversationId, userId: adminId, role: ConversationRole.ADMIN }
-  });
-  if (!adminMember) throw Object.assign(new Error("Forbidden"), { status: 403 });
-
-  return prisma.conversationMember.deleteMany({
-    where: {
-      conversationId,
-      userId: memberId
-    }
-  });
-};
