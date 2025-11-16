@@ -1,5 +1,39 @@
 import { PrismaClient, ConversationRole } from "@prisma/client";
 export const prisma = new PrismaClient();
+// ALIAS FOR BACKWARD COMPATIBILITY
+export const listUserConversations = async (userId: string) => {
+  return getUserConversations(userId);
+};
+
+
+// ADD MEMBER TO GROUP
+export const addMemberToGroup = async (
+  conversationId: string,
+  userId: string
+) => {
+  return prisma.conversationMember.create({
+    data: {
+      role: ConversationRole.MEMBER,
+      conversation: { connect: { id: conversationId } },
+      user: { connect: { id: userId } }
+    },
+    include: { user: true }
+  });
+};
+
+
+// REMOVE MEMBER FROM GROUP
+export const removeMemberFromGroup = async (
+  conversationId: string,
+  userId: string
+) => {
+  return prisma.conversationMember.deleteMany({
+    where: {
+      conversationId,
+      userId
+    }
+  });
+};
 
 
 // DIRECT CONVERSATION
