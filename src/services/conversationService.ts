@@ -68,6 +68,13 @@ export const removeMemberFromGroup = async (
 
 // DIRECT CONVERSATION
 export const createDirectConversation = async (userId: string, otherUserId: string) => {
+console.log("DIRECT CHAT DEBUG:", { userId, otherUserId });
+
+const userExists = await prisma.user.findUnique({ where: { id: userId } });
+const otherUserExists = await prisma.user.findUnique({ where: { id: otherUserId } });
+
+console.log("USER EXISTS:", userExists);
+console.log("OTHER USER EXISTS:", otherUserExists);
 
   const existing = await prisma.conversation.findFirst({
     where: {
