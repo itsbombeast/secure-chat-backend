@@ -1,106 +1,52 @@
 import { PrismaClient, ConversationRole } from "@prisma/client";
 export const prisma = new PrismaClient();
-// ALIAS FOR BACKWARD COMPATIBILITY
-export const listUserConversations = async (userId: string) => {
-  return getUserConversations(userId);
-};
 
+export const createDirectConversation = async (userId: string, otherUserIdentifier: string) => {
+  console.log("DIRECT CHAT DEBUG:", { userId, otherUserId: otherUserIdentifier });
 
-// ADD MEMBER TO GROUP
-export const addMemberToGroup = async (
-  conversationId: string,
-  adminId: string,
-  userId: string
-) => {
-  // Only admins can add members
-  const admin = await prisma.conversationMember.findFirst({
-    where: {
-      conversationId,
-      userId: adminId,
-      role: ConversationRole.ADMIN
-    }
-  });
+  // 1. Find current user
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  console.log("USER EXISTS:", user);
 
-  if (!admin) {
-    throw new Error("Not authorized to add members");
-  }
+  if (!user) throw new Error("Current user not found.");
 
-  // Add user
-  return prisma.conversationMember.create({
-    data: {
-      role: ConversationRole.MEMBER,
-      conversation: { connect: { id: conversationId } },
-      user: { connect: { id: userId } }
-    },
-    include: { user: true }
-  });
-};
+  // 2. Resolve other user (by ID or username)
+  const otherUser =
+    (await prisma.user.findUnique({ where: { id: otherUserIdentifier } })) ||
+    (await prisma.user.findUnique({ where: { username: otherUserIdentifier } }));
 
+  console.log("OTHER USER EXISTS:", otherUser);
 
-export const removeMemberFromGroup = async (
-  conversationId: string,
-  adminId: string,
-  userId: string
-) => {
-  // Only admins can remove members
-  const admin = await prisma.conversationMember.findFirst({
-    where: {
-      conversationId,
-      userId: adminId,
-      role: ConversationRole.ADMIN
-    }
-  });
+  if (!otherUser) throw new Error("User not found");
 
-  if (!admin) {
-    throw new Error("Not authorized to remove members");
-  }
-
-  // Remove user
-  return prisma.conversationMember.deleteMany({
-    where: {
-      conversationId,
-      userId
-    }
-  });
-};
-
-
-
-// DIRECT CONVERSATION
-export const createDirectConversation = async (userId: string, otherUserId: string) => {
-console.log("DIRECT CHAT DEBUG:", { userId, otherUserId });
-
-const userExists = await prisma.user.findUnique({ where: { id: userId } });
-const otherUserExists = await prisma.user.findUnique({ where: { id: otherUserId } });
-
-console.log("USER EXISTS:", userExists);
-console.log("OTHER USER EXISTS:", otherUserExists);
-
+  // 3. Check if direct conversation exists
   const existing = await prisma.conversation.findFirst({
     where: {
       isGroup: false,
-      AND: [
-        { members: { some: { userId } } },
-        { members: { some: { userId: otherUserId } } }
-      ]
+      members: {
+        some: { userId }
+      },
+      AND: {
+        members: {
+          some: { userId: otherUser.id }
+        }
+      }
+    },
+    include: {
+      members: { include: { user: true } }
     }
   });
 
   if (existing) return existing;
 
+  // 4. Create new direct conversation
   const conversation = await prisma.conversation.create({
     data: {
       isGroup: false,
       members: {
         create: [
-          {
-            role: ConversationRole.MEMBER,
-            user: { connect: { id: userId } }
-          },
-          {
-            role: ConversationRole.MEMBER,
-            user: { connect: { id: otherUserId } }
-          }
+          { role: "MEMBER", user: { connect: { id: user.id } } },
+          { role: "MEMBER", user: { connect: { id: otherUser.id } } }
         ]
       }
     },
@@ -112,63 +58,4 @@ console.log("OTHER USER EXISTS:", otherUserExists);
   return conversation;
 };
 
-
-
-// GROUP CONVERSATION
-export const createGroupConversation = async (
-  creatorId: string,
-  name: string,
-  description: string | undefined,
-  memberIds: string[]
-) => {
-
-  const members = [
-    {
-      role: ConversationRole.ADMIN,
-      user: { connect: { id: creatorId } }
-    },
-    ...memberIds
-      .filter((id) => id !== creatorId)
-      .map((id) => ({
-        role: ConversationRole.MEMBER,
-        user: { connect: { id } }
-      }))
-  ];
-
-  const conversation = await prisma.conversation.create({
-    data: {
-      isGroup: true,
-      name,
-      description,
-      createdById: creatorId,
-      members: {
-        create: members
-      }
-    },
-    include: {
-      members: { include: { user: true } }
-    }
-  });
-
-  return conversation;
-};
-
-
-
-// GET USER CONVERSATIONS
-export const getUserConversations = async (userId: string) => {
-  return prisma.conversationMember.findMany({
-    where: { userId },
-    include: {
-      conversation: {
-        include: {
-          members: { include: { user: true } }
-        }
-      }
-    },
-    orderBy: {
-      conversation: { updatedAt: "desc" }
-    }
-  });
-};
 
