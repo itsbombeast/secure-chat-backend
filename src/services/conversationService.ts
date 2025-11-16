@@ -9,8 +9,23 @@ export const listUserConversations = async (userId: string) => {
 // ADD MEMBER TO GROUP
 export const addMemberToGroup = async (
   conversationId: string,
+  adminId: string,
   userId: string
 ) => {
+  // Only admins can add members
+  const admin = await prisma.conversationMember.findFirst({
+    where: {
+      conversationId,
+      userId: adminId,
+      role: ConversationRole.ADMIN
+    }
+  });
+
+  if (!admin) {
+    throw new Error("Not authorized to add members");
+  }
+
+  // Add user
   return prisma.conversationMember.create({
     data: {
       role: ConversationRole.MEMBER,
@@ -22,11 +37,25 @@ export const addMemberToGroup = async (
 };
 
 
-// REMOVE MEMBER FROM GROUP
 export const removeMemberFromGroup = async (
   conversationId: string,
+  adminId: string,
   userId: string
 ) => {
+  // Only admins can remove members
+  const admin = await prisma.conversationMember.findFirst({
+    where: {
+      conversationId,
+      userId: adminId,
+      role: ConversationRole.ADMIN
+    }
+  });
+
+  if (!admin) {
+    throw new Error("Not authorized to remove members");
+  }
+
+  // Remove user
   return prisma.conversationMember.deleteMany({
     where: {
       conversationId,
@@ -34,6 +63,7 @@ export const removeMemberFromGroup = async (
     }
   });
 };
+
 
 
 // DIRECT CONVERSATION
