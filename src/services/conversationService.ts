@@ -23,12 +23,18 @@ export const createDirectConversation = async (userId: string, otherUserId: stri
     where: {
       isGroup: false,
       members: {
-        every: {
-          userId: {
-            in: [userId, otherUserId]
-          }
-        }
-      }
+  create: [
+    {
+      userId,
+      role: "MEMBER"
+    },
+    {
+      userId: otherUserId,
+      role: "MEMBER"
+    }
+  ]
+}
+
     },
     include: {
       members: true
@@ -64,19 +70,24 @@ export const createGroupConversation = async (
       createdById: creatorId,
       members: {
         create: [
-          { userId: creatorId, role: ConversationRole.ADMIN },
+          {
+            userId: creatorId,
+            role: "ADMIN"     // MUST be string!
+          },
           ...memberIds
             .filter((id) => id !== creatorId)
             .map((id) => ({
               userId: id,
-              role: ConversationRole.MEMBER as ConversationRole
+              role: "MEMBER"  // MUST be string!
             }))
         ]
       }
     }
   });
+
   return convo;
 };
+
 
 export const addMemberToGroup = async (conversationId: string, adminId: string, newMemberId: string) => {
   const adminMember = await prisma.conversationMember.findFirst({
