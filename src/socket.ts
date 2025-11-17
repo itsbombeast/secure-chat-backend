@@ -1,4 +1,5 @@
 // backend/src/socket.ts
+// backend/src/socket.ts
 import { Server, Socket } from "socket.io";
 import http from "http";
 import jwt from "jsonwebtoken";
@@ -7,9 +8,6 @@ import { JWT_SECRET } from "./config";
 interface AuthenticatedSocket extends Socket {
   userId?: string;
 }
-
-// Track online users
-const onlineUsers = new Set<string>();
 
 export function createSocketServer(server: http.Server) {
   const io = new Server(server, {
@@ -22,7 +20,6 @@ export function createSocketServer(server: http.Server) {
     }
   });
 
-  // Authentication middleware for socket.io
   io.use((socket: AuthenticatedSocket, next) => {
     const token = socket.handshake.auth?.token;
     if (!token) return next(new Error("No auth token"));
@@ -31,119 +28,72 @@ export function createSocketServer(server: http.Server) {
       const payload = jwt.verify(token, JWT_SECRET!) as { userId: string };
       socket.userId = payload.userId;
       next();
-    } catch (err) {
+    } catch {
       next(new Error("Invalid token"));
     }
   });
 
   io.on("connection", (socket: AuthenticatedSocket) => {
     const userId = socket.userId!;
-    console.log("User connected:", userId);
 
-    // Mark user online
-    onlineUsers.add(userId);
-    io.emit("user_online", { userId });
-
-    // Cleanup
-    socket.on("disconnect", () => {
-      console.log("User disconnected:", userId);
-      onlineUsers.delete(userId);
-      io.emit("user_offline", { userId });
+    // Join room
+    socket.on("join_conversation", ({ conversationId }) => {
+      socket.join(conversationId);
     });
 
-    // Join conversation room
-    socket.on(
-      "join_conversation",
-      ({ conversationId }: { conversationId: string }) => {
-        socket.join(conversationId);
-      }
-    );
+    // ---------------- WEBRTC CALL FLOW ----------------
 
-    // Typing indicator
-    socket.on(
-      "typing",
-      ({ conversationId }: { conversationId: string }) => {
-        socket.to(conversationId).emit("typing", {
-          conversationId,
-          userId
-        });
-      }
-    );
+    // someone starts calling
+    socket.on("call_request", ({ conversationId, withVideo }) => {
+      socket.to(conversationId).emit("call_incoming", {
+        from: userId,
+        withVideo
+      });
+    });
 
-    socket.on(
-      "typing_stop",
-      ({ conversationId }: { conversationId: string }) => {
-        socket.to(conversationId).emit("typing_stop", {
-          conversationId,
-          userId
-        });
-      }
-    );
+    // callee accepts
+    socket.on("call_accept", ({ conversationId }) => {
+      socket.to(conversationId).emit("call_accepted", {
+        from: userId
+      });
+    });
 
-    // WebRTC Offers
-    socket.on(
-      "webrtc_offer",
-      ({
-        conversationId,
+    // callee rejects
+    socket.on("call_reject", ({ conversationId }) => {
+      socket.to(conversationId).emit("call_rejected", {
+        from: userId
+      });
+    });
+
+    // caller sends offer
+    socket.on("webrtc_offer", ({ conversationId, offer }) => {
+      socket.to(conversationId).emit("webrtc_offer", {
+        from: userId,
         offer
-      }: {
-        conversationId: string;
-        offer: RTCSessionDescriptionInit;
-      }) => {
-        socket.to(conversationId).emit("webrtc_offer", {
-          conversationId,
-          offer,
-          from: userId
-        });
-      }
-    );
+      });
+    });
 
-    // WebRTC Answers
-    socket.on(
-      "webrtc_answer",
-      ({
-        conversationId,
+    // callee sends answer
+    socket.on("webrtc_answer", ({ conversationId, answer }) => {
+      socket.to(conversationId).emit("webrtc_answer", {
+        from: userId,
         answer
-      }: {
-        conversationId: string;
-        answer: RTCSessionDescriptionInit;
-      }) => {
-        socket.to(conversationId).emit("webrtc_answer", {
-          conversationId,
-          answer,
-          from: userId
-        });
-      }
-    );
+      });
+    });
 
-    // WebRTC ICE Candidates
-    socket.on(
-      "webrtc_ice_candidate",
-      ({
-        conversationId,
+    // ICE
+    socket.on("webrtc_ice_candidate", ({ conversationId, candidate }) => {
+      socket.to(conversationId).emit("webrtc_ice_candidate", {
+        from: userId,
         candidate
-      }: {
-        conversationId: string;
-        candidate: RTCIceCandidateInit;
-      }) => {
-        socket.to(conversationId).emit("webrtc_ice_candidate", {
-          conversationId,
-          candidate,
-          from: userId
-        });
-      }
-    );
+      });
+    });
 
-    // WebRTC Hangup
-    socket.on(
-      "webrtc_hangup",
-      ({ conversationId }: { conversationId: string }) => {
-        socket.to(conversationId).emit("webrtc_hangup", {
-          conversationId,
-          from: userId
-        });
-      }
-    );
+    socket.on("webrtc_hangup", ({ conversationId }) => {
+      socket.to(conversationId).emit("webrtc_hangup", {
+        from: userId
+      });
+    });
   });
 
   return io;
