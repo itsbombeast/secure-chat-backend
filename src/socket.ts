@@ -1,5 +1,4 @@
 // backend/src/socket.ts
-// backend/src/socket.ts
 import { Server, Socket } from "socket.io";
 import http from "http";
 import jwt from "jsonwebtoken";
@@ -36,44 +35,45 @@ export function createSocketServer(server: http.Server) {
   io.on("connection", (socket: AuthenticatedSocket) => {
     const userId = socket.userId!;
 
-    // Join room
+    // JOIN ROOM
     socket.on("join_conversation", ({ conversationId }) => {
       socket.join(conversationId);
     });
 
-    // ---------------- WEBRTC CALL FLOW ----------------
+    // ------------- CALL FLOW (SYNCED WITH FRONTEND) ----------------
 
-    // someone starts calling
-    socket.on("call_request", ({ conversationId, withVideo }) => {
-      socket.to(conversationId).emit("call_incoming", {
+    // CALL START
+    socket.on("webrtc_call_request", ({ conversationId, offer, withVideo }) => {
+      socket.to(conversationId).emit("webrtc_call_request", {
         from: userId,
+        offer,
         withVideo
       });
     });
 
-    // callee accepts
-    socket.on("call_accept", ({ conversationId }) => {
-      socket.to(conversationId).emit("call_accepted", {
+    // CALL ACCEPT
+    socket.on("webrtc_call_accept", ({ conversationId }) => {
+      socket.to(conversationId).emit("webrtc_call_accept", {
         from: userId
       });
     });
 
-    // callee rejects
-    socket.on("call_reject", ({ conversationId }) => {
-      socket.to(conversationId).emit("call_rejected", {
+    // CALL REJECT
+    socket.on("webrtc_call_reject", ({ conversationId }) => {
+      socket.to(conversationId).emit("webrtc_call_reject", {
         from: userId
       });
     });
 
-    // caller sends offer
-    socket.on("webrtc_offer", ({ conversationId, offer }) => {
-      socket.to(conversationId).emit("webrtc_offer", {
+    // FINAL OFFER READY
+    socket.on("webrtc_offer_ready", ({ conversationId, offer }) => {
+      socket.to(conversationId).emit("webrtc_offer_ready", {
         from: userId,
         offer
       });
     });
 
-    // callee sends answer
+    // ANSWER
     socket.on("webrtc_answer", ({ conversationId, answer }) => {
       socket.to(conversationId).emit("webrtc_answer", {
         from: userId,
@@ -81,7 +81,7 @@ export function createSocketServer(server: http.Server) {
       });
     });
 
-    // ICE
+    // ICE CANDIDATE
     socket.on("webrtc_ice_candidate", ({ conversationId, candidate }) => {
       socket.to(conversationId).emit("webrtc_ice_candidate", {
         from: userId,
@@ -89,6 +89,7 @@ export function createSocketServer(server: http.Server) {
       });
     });
 
+    // HANGUP
     socket.on("webrtc_hangup", ({ conversationId }) => {
       socket.to(conversationId).emit("webrtc_hangup", {
         from: userId
@@ -98,3 +99,4 @@ export function createSocketServer(server: http.Server) {
 
   return io;
 }
+
