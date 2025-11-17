@@ -1,3 +1,4 @@
+// backend/src/routes/uploadRoutes.ts
 import { Router } from "express";
 import multer from "multer";
 import path from "path";
@@ -12,8 +13,6 @@ if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
 
-// We assume files are ALREADY encrypted on client.
-// Server just stores opaque blobs.
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
     cb(null, UPLOAD_DIR);
