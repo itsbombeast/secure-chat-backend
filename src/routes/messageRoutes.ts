@@ -1,36 +1,45 @@
+// backend/src/routes/messageRoutes.ts
 import { Router } from "express";
 import { requireAuth, AuthRequest } from "../middleware/authMiddleware";
 import { requireAccessGate } from "../middleware/accessGateMiddleware";
-import { createMessage, listMessages, editMessage, deleteMessageForMe, deleteMessageForEveryone, markMessageSeen } from "../services/messageService";
+import {
+  getMessagesForConversation,
+  createMessage,
+  editMessage,
+  deleteMessageForMe,
+  deleteMessageForEveryone
+} from "../services/messageService";
 import { MessageType } from "@prisma/client";
-import { io } from "../socket";
 
 const router = Router();
 
 router.use(requireAccessGate);
 router.use(requireAuth);
 
-// List messages
+// GET messages
 router.get("/:conversationId", async (req: AuthRequest, res, next) => {
   try {
     const userId = req.userId!;
     const { conversationId } = req.params;
-    const messages = await listMessages(conversationId, userId);
-    res.json(messages);
+    const msgs = await getMessagesForConversation(conversationId, userId);
+    res.json(msgs);
   } catch (e) {
     next(e);
   }
 });
 
-// Create message
+// POST message
 router.post("/:conversationId", async (req: AuthRequest, res, next) => {
   try {
     const userId = req.userId!;
     const { conversationId } = req.params;
-    const { type = "TEXT", ciphertext, iv, meta } = req.body;
-    if (!ciphertext || !iv) return res.status(400).json({ error: "Missing ciphertext/iv" });
+    const { type, ciphertext, iv, meta } = req.body;
 
-    const message = await createMessage(
+    if (!ciphertext || !iv) {
+      return res.status(400).json({ error: "Missing ciphertext or iv" });
+    }
+
+    const msg = await createMessage(
       conversationId,
       userId,
       type === "IMAGE" ? MessageType.IMAGE : MessageType.TEXT,
@@ -39,96 +48,44 @@ router.post("/:conversationId", async (req: AuthRequest, res, next) => {
       meta
     );
 
-    io.to(`conversation:${conversationId}`).emit("message:new", {
-      conversationId,
-      messageId: message.id
-    });
-
-    res.json(message);
-  } catch (e) {
-    next(e);
-  }
-});
-
-// Edit message
-router.put("/:conversationId/:messageId", async (req: AuthRequest, res, next) => {
-  try {
-    const userId = req.userId!;
-    const { conversationId, messageId } = req.params;
-    const { ciphertext, iv } = req.body;
-    if (!ciphertext || !iv) return res.status(400).json({ error: "Missing ciphertext/iv" });
-
-    const msg = await editMessage(messageId, userId, ciphertext, iv);
-
-    io.to(`conversation:${conversationId}`).emit("message:edited", {
-      conversationId,
-      messageId
-    });
-
     res.json(msg);
   } catch (e) {
     next(e);
   }
 });
 
-// Delete for me
-router.delete("/:conversationId/:messageId/me", async (req: AuthRequest, res, next) => {
+// PATCH edit
+router.patch("/:messageId", async (req: AuthRequest, res, next) => {
   try {
     const userId = req.userId!;
-    const { conversationId, messageId } = req.params;
+    const { messageId } = req.params;
+    const { ciphertext } = req.body;
 
-    await deleteMessageForMe(messageId, userId);
-
-    io.to(`conversation:${conversationId}`).emit("message:deleted", {
-      conversationId,
-      messageId,
-      scope: "ME_ONLY"
-    });
-
-    res.json({ ok: true });
+    const msg = await editMessage(messageId, userId, ciphertext);
+    res.json(msg);
   } catch (e) {
     next(e);
   }
 });
 
-// Delete for everyone
-router.delete("/:conversationId/:messageId/everyone", async (req: AuthRequest, res, next) => {
+// DELETE – delete for me or everyone
+router.delete("/:messageId", async (req: AuthRequest, res, next) => {
   try {
     const userId = req.userId!;
-    const { conversationId, messageId } = req.params;
+    const { messageId } = req.params;
+    const { scope } = req.query;
 
-    await deleteMessageForEveryone(messageId, userId);
-
-    io.to(`conversation:${conversationId}`).emit("message:deleted", {
-      conversationId,
-      messageId,
-      scope: "EVERYONE"
-    });
-
-    res.json({ ok: true });
-  } catch (e) {
-    next(e);
-  }
-});
-
-// Mark seen
-router.post("/:conversationId/:messageId/seen", async (req: AuthRequest, res, next) => {
-  try {
-    const userId = req.userId!;
-    const { conversationId, messageId } = req.params;
-
-    const receipt = await markMessageSeen(messageId, userId);
-
-    io.to(`conversation:${conversationId}`).emit("message:seen", {
-      conversationId,
-      messageId,
-      userId
-    });
-
-    res.json(receipt);
+    if (scope === "everyone") {
+      const msg = await deleteMessageForEveryone(messageId, userId);
+      res.json(msg);
+    } else {
+      const deletion = await deleteMessageForMe(messageId, userId);
+      res.json(deletion);
+    }
   } catch (e) {
     next(e);
   }
 });
 
 export default router;
+

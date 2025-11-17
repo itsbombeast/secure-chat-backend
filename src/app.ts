@@ -14,12 +14,13 @@ import messageRoutes from "./routes/messageRoutes";
 import uploadRoutes from "./routes/uploadRoutes";
 import { errorHandler } from "./middleware/errorHandler";
 
+
 export const createApp = () => {
   const app = express();
 
   // Required when using cookies + HTTPS (Fly.io, Vercel, Cloudflare, Nginx)
   app.set("trust proxy", 1);
-
+app.use("/api/messages", messageRoutes);
   app.use(
     cors({
       origin: [

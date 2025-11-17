@@ -1,16 +1,12 @@
+// backend/src/services/messageService.ts
 import { PrismaClient, MessageType, DeletionScope } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-export const listMessages = (conversationId: string, userId: string) => {
+export const getMessagesForConversation = async (conversationId: string, userId: string) => {
   return prisma.message.findMany({
     where: {
-      conversationId,
-      deletions: {
-        none: {
-          userId
-        }
-      }
+      conversationId
     },
     orderBy: { createdAt: "asc" }
   });
@@ -24,7 +20,7 @@ export const createMessage = async (
   iv: string,
   meta?: any
 ) => {
-  const message = await prisma.message.create({
+  const msg = await prisma.message.create({
     data: {
       conversationId,
       senderId,
@@ -34,16 +30,21 @@ export const createMessage = async (
       meta
     }
   });
-  return message;
+
+  return msg;
 };
 
-export const editMessage = async (messageId: string, userId: string, newCiphertext: string, newIv: string) => {
+export const editMessage = async (messageId: string, userId: string, newCiphertext: string) => {
   const msg = await prisma.message.findUnique({ where: { id: messageId } });
-  if (!msg || msg.senderId !== userId) throw Object.assign(new Error("Forbidden"), { status: 403 });
+  if (!msg) throw new Error("Message not found");
+  if (msg.senderId !== userId) throw new Error("Not authorized");
 
   return prisma.message.update({
     where: { id: messageId },
-    data: { ciphertext: newCiphertext, iv: newIv, editedAt: new Date() }
+    data: {
+      ciphertext: newCiphertext,
+      editedAt: new Date()
+    }
   });
 };
 
@@ -59,28 +60,13 @@ export const deleteMessageForMe = async (messageId: string, userId: string) => {
 
 export const deleteMessageForEveryone = async (messageId: string, userId: string) => {
   const msg = await prisma.message.findUnique({ where: { id: messageId } });
-  if (!msg || msg.senderId !== userId) throw Object.assign(new Error("Forbidden"), { status: 403 });
+  if (!msg) throw new Error("Message not found");
+  if (msg.senderId !== userId) throw new Error("Not authorized");
 
-  await prisma.message.update({
+  return prisma.message.update({
     where: { id: messageId },
-    data: { deletedForEveryoneAt: new Date() }
-  });
-
-  return prisma.messageDeletion.createMany({
-    data: [
-      {
-        messageId,
-        userId,
-        scope: DeletionScope.EVERYONE
-      }
-    ]
-  });
-};
-
-export const markMessageSeen = async (messageId: string, userId: string) => {
-  return prisma.messageReceipt.upsert({
-    where: { messageId_userId: { messageId, userId } },
-    update: { seenAt: new Date() },
-    create: { messageId, userId }
+    data: {
+      deletedForEveryoneAt: new Date()
+    }
   });
 };
