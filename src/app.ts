@@ -1,4 +1,3 @@
-
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -14,67 +13,62 @@ import messageRoutes from "./routes/messageRoutes";
 import uploadRoutes from "./routes/uploadRoutes";
 import { errorHandler } from "./middleware/errorHandler";
 
-
 export const createApp = () => {
   const app = express();
 
-  // Required when using cookies + HTTPS (Fly.io, Vercel, Cloudflare, Nginx)
+  // ✅ Fix for Render / Vercel / Fly.io proxy — REQUIRED for rate-limiter
   app.set("trust proxy", 1);
-app.use("/api/messages", messageRoutes);
+
+  // 🔥 CORS
   app.use(
     cors({
       origin: [
-        // Local development
         "http://localhost:5173",
         "http://127.0.0.1:5173",
-
-        // Production Vercel URLs
         "https://chatappxd.vercel.app",
-        "https://chatappxd-h2ot08m0x-pa37trik-7906s-projects.vercel.app",
+        "https://chatappxd-h2ot08m0x-pa37trik-7906s-projects.vercel.app"
       ],
-      credentials: true, // allow cookies
+      credentials: true,
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-      allowedHeaders: ["Content-Type", "Authorization"],
+      allowedHeaders: ["Content-Type", "Authorization"]
     })
   );
 
-
-  // --- SECURITY HEADERS ---
+  // Security
   app.use(
     helmet({
-      crossOriginResourcePolicy: false,
+      crossOriginResourcePolicy: false
     })
   );
 
-  // --- BODY PARSERS ---
+  // Parsers
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true }));
-
-  // --- COOKIE PARSER ---
   app.use(cookieParser());
 
-  // --- RATE LIMITING ---
-  const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 200, // limit per IP
-    standardHeaders: true,
-    legacyHeaders: false,
-  });
+  // Rate limiting
+  app.use(
+    rateLimit({
+      windowMs: 15 * 60 * 1000,
+      max: 200,
+      standardHeaders: true,
+      legacyHeaders: false
+    })
+  );
 
-  app.use(limiter);
-
-  // --- STATIC UPLOADS ---
+  // Uploads
   app.use("/uploads", express.static(path.resolve(UPLOAD_DIR)));
 
-  // --- ROUTES ---
+  // Routes
   app.use("/api/access-gate", accessGateRoutes);
   app.use("/api/auth", authRoutes);
   app.use("/api/conversations", conversationRoutes);
-  app.use("/api/messages", messageRoutes);
+  app.use("/api/messages", messageRoutes); // ✅ only once
   app.use("/api/upload", uploadRoutes);
 
-  // --- GLOBAL ERROR HANDLER ---
+  // Error handler
   app.use(errorHandler);
 
   return app;
 };
+
