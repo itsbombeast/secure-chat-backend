@@ -1,111 +1,150 @@
-import { Server as HTTPServer } from "http";
+// backend/src/socket.ts
 import { Server, Socket } from "socket.io";
+import http from "http";
 import jwt from "jsonwebtoken";
-import { JWT_SECRET, BASE_CLIENT_URL } from "./config";
+import { JWT_SECRET } from "./config";
 
-interface JwtPayload {
-  userId: string;
+interface AuthenticatedSocket extends Socket {
+  userId?: string;
 }
 
-export let io: Server;
+// Track online users
+const onlineUsers = new Set<string>();
 
-export const initSocket = (server: HTTPServer) => {
-  io = new Server(server, {
+export function createSocketServer(server: http.Server) {
+  const io = new Server(server, {
     cors: {
-      origin: BASE_CLIENT_URL,
+      origin: [
+        "https://chatappxd.vercel.app",
+        "http://localhost:5173"
+      ],
       credentials: true
     }
   });
 
-  io.use((socket, next) => {
-    try {
-      const token = socket.handshake.auth?.token;
-      if (!token) return next(new Error("unauthorized"));
+  // Authentication middleware for socket.io
+  io.use((socket: AuthenticatedSocket, next) => {
+    const token = socket.handshake.auth?.token;
+    if (!token) return next(new Error("No auth token"));
 
-      const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
-      (socket as any).userId = decoded.userId;
+    try {
+      const payload = jwt.verify(token, JWT_SECRET!) as { userId: string };
+      socket.userId = payload.userId;
       next();
     } catch (err) {
-      next(new Error("unauthorized"));
+      next(new Error("Invalid token"));
     }
   });
 
-  io.on("connection", (socket: Socket) => {
-    const userId: string = (socket as any).userId;
-    socket.join(`user:${userId}`);
+  io.on("connection", (socket: AuthenticatedSocket) => {
+    const userId = socket.userId!;
+    console.log("User connected:", userId);
 
-    socket.on("joinConversation", (conversationId: string) => {
-      socket.join(`conversation:${conversationId}`);
+    // Mark user online
+    onlineUsers.add(userId);
+    io.emit("user_online", { userId });
+
+    // Cleanup
+    socket.on("disconnect", () => {
+      console.log("User disconnected:", userId);
+      onlineUsers.delete(userId);
+      io.emit("user_offline", { userId });
     });
 
-    socket.on("leaveConversation", (conversationId: string) => {
-      socket.leave(`conversation:${conversationId}`);
-    });
-
-    socket.on("typing", (payload: { conversationId: string; isTyping: boolean }) => {
-      socket.to(`conversation:${payload.conversationId}`).emit("typing", {
-        userId,
-        isTyping: payload.isTyping
-      });
-    });
-
-    socket.on("messageSent", (payload: { conversationId: string; messageId: string }) => {
-      socket.to(`conversation:${payload.conversationId}`).emit("message:new", payload);
-    });
-
-    socket.on("messageEdited", (payload: { conversationId: string; messageId: string }) => {
-      socket.to(`conversation:${payload.conversationId}`).emit("message:edited", payload);
-    });
-
-    socket.on("messageDeleted", (payload: { conversationId: string; messageId: string; scope: string }) => {
-      socket.to(`conversation:${payload.conversationId}`).emit("message:deleted", payload);
-    });
-
-    socket.on("messageSeen", (payload: { conversationId: string; messageId: string }) => {
-      socket.to(`conversation:${payload.conversationId}`).emit("message:seen", {
-        userId,
-        ...payload
-      });
-    });
-
-    socket.on("call:offer", (payload: any) => {
-      const { toUserId, conversationId, sdp } = payload;
-      if (toUserId) {
-        io.to(`user:${toUserId}`).emit("call:offer", { fromUserId: userId, sdp, conversationId });
-      } else if (conversationId) {
-        socket.to(`conversation:${conversationId}`).emit("call:offer", { fromUserId: userId, sdp, conversationId });
+    // Join conversation room
+    socket.on(
+      "join_conversation",
+      ({ conversationId }: { conversationId: string }) => {
+        socket.join(conversationId);
       }
-    });
+    );
 
-    socket.on("call:answer", (payload: any) => {
-      const { toUserId, conversationId, sdp } = payload;
-      if (toUserId) {
-        io.to(`user:${toUserId}`).emit("call:answer", { fromUserId: userId, sdp, conversationId });
-      } else if (conversationId) {
-        socket.to(`conversation:${conversationId}`).emit("call:answer", { fromUserId: userId, sdp, conversationId });
-      }
-    });
-
-    socket.on("call:ice-candidate", (payload: any) => {
-      const { toUserId, conversationId, candidate } = payload;
-      if (toUserId) {
-        io.to(`user:${toUserId}`).emit("call:ice-candidate", { fromUserId: userId, candidate, conversationId });
-      } else if (conversationId) {
-        socket.to(`conversation:${conversationId}`).emit("call:ice-candidate", {
-          fromUserId: userId,
-          candidate,
-          conversationId
+    // Typing indicator
+    socket.on(
+      "typing",
+      ({ conversationId }: { conversationId: string }) => {
+        socket.to(conversationId).emit("typing", {
+          conversationId,
+          userId
         });
       }
-    });
+    );
 
-    socket.on("call:end", (payload: any) => {
-      const { toUserId, conversationId } = payload;
-      if (toUserId) {
-        io.to(`user:${toUserId}`).emit("call:end", { fromUserId: userId, conversationId });
-      } else if (conversationId) {
-        socket.to(`conversation:${conversationId}`).emit("call:end", { fromUserId: userId, conversationId });
+    socket.on(
+      "typing_stop",
+      ({ conversationId }: { conversationId: string }) => {
+        socket.to(conversationId).emit("typing_stop", {
+          conversationId,
+          userId
+        });
       }
-    });
+    );
+
+    // WebRTC Offers
+    socket.on(
+      "webrtc_offer",
+      ({
+        conversationId,
+        offer
+      }: {
+        conversationId: string;
+        offer: RTCSessionDescriptionInit;
+      }) => {
+        socket.to(conversationId).emit("webrtc_offer", {
+          conversationId,
+          offer,
+          from: userId
+        });
+      }
+    );
+
+    // WebRTC Answers
+    socket.on(
+      "webrtc_answer",
+      ({
+        conversationId,
+        answer
+      }: {
+        conversationId: string;
+        answer: RTCSessionDescriptionInit;
+      }) => {
+        socket.to(conversationId).emit("webrtc_answer", {
+          conversationId,
+          answer,
+          from: userId
+        });
+      }
+    );
+
+    // WebRTC ICE Candidates
+    socket.on(
+      "webrtc_ice_candidate",
+      ({
+        conversationId,
+        candidate
+      }: {
+        conversationId: string;
+        candidate: RTCIceCandidateInit;
+      }) => {
+        socket.to(conversationId).emit("webrtc_ice_candidate", {
+          conversationId,
+          candidate,
+          from: userId
+        });
+      }
+    );
+
+    // WebRTC Hangup
+    socket.on(
+      "webrtc_hangup",
+      ({ conversationId }: { conversationId: string }) => {
+        socket.to(conversationId).emit("webrtc_hangup", {
+          conversationId,
+          from: userId
+        });
+      }
+    );
   });
-};
+
+  return io;
+}
