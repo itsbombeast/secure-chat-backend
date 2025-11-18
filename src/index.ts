@@ -7,7 +7,7 @@ import accessGateRoutes from "./routes/accessGateRoutes";
 import conversationRoutes from "./routes/conversationRoutes";
 import messageRoutes from "./routes/messageRoutes";
 import uploadRoutes from "./routes/uploadRoutes";
-import { setupSocket } from "./socket";
+import { createSocketServer } from "./socket";
 import { FRONTEND_URL, UPLOAD_DIR } from "./config";
 import path from "path";
 
@@ -35,7 +35,7 @@ app.use("/api/upload", uploadRoutes); // ← MUSÍ BÝT!
 
 // HTTP + SOCKET.IO SERVER
 const server = http.createServer(app);
-setupSocket(server);
+createSocketServer(server);
 
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
