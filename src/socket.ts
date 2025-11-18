@@ -19,6 +19,7 @@ export function createSocketServer(server: http.Server) {
     }
   });
 
+  // Authentication middleware
   io.use((socket: AuthenticatedSocket, next) => {
     const token = socket.handshake.auth?.token;
     if (!token) return next(new Error("No auth token"));
@@ -34,15 +35,18 @@ export function createSocketServer(server: http.Server) {
 
   io.on("connection", (socket: AuthenticatedSocket) => {
     const userId = socket.userId!;
+    console.log("User connected:", userId);
 
-    // JOIN ROOM
+    // Join conversation
     socket.on("join_conversation", ({ conversationId }) => {
       socket.join(conversationId);
     });
 
-    // ------------- CALL FLOW (SYNCED WITH FRONTEND) ----------------
+    // -----------------------------------------
+    // 🔥 FIXED EVENTS TO MATCH FRONTEND 🔥
+    // -----------------------------------------
 
-    // CALL START
+    // Someone starts a call
     socket.on("webrtc_call_request", ({ conversationId, offer, withVideo }) => {
       socket.to(conversationId).emit("webrtc_call_request", {
         from: userId,
@@ -51,21 +55,21 @@ export function createSocketServer(server: http.Server) {
       });
     });
 
-    // CALL ACCEPT
+    // Callee accepts call
     socket.on("webrtc_call_accept", ({ conversationId }) => {
       socket.to(conversationId).emit("webrtc_call_accept", {
         from: userId
       });
     });
 
-    // CALL REJECT
+    // Callee rejects call
     socket.on("webrtc_call_reject", ({ conversationId }) => {
       socket.to(conversationId).emit("webrtc_call_reject", {
         from: userId
       });
     });
 
-    // FINAL OFFER READY
+    // Caller sends final offer ("offer_ready")
     socket.on("webrtc_offer_ready", ({ conversationId, offer }) => {
       socket.to(conversationId).emit("webrtc_offer_ready", {
         from: userId,
@@ -73,7 +77,15 @@ export function createSocketServer(server: http.Server) {
       });
     });
 
-    // ANSWER
+    // SDP OFFER (standard WebRTC)
+    socket.on("webrtc_offer", ({ conversationId, offer }) => {
+      socket.to(conversationId).emit("webrtc_offer", {
+        from: userId,
+        offer
+      });
+    });
+
+    // SDP ANSWER
     socket.on("webrtc_answer", ({ conversationId, answer }) => {
       socket.to(conversationId).emit("webrtc_answer", {
         from: userId,
@@ -81,7 +93,7 @@ export function createSocketServer(server: http.Server) {
       });
     });
 
-    // ICE CANDIDATE
+    // ICE Candidate
     socket.on("webrtc_ice_candidate", ({ conversationId, candidate }) => {
       socket.to(conversationId).emit("webrtc_ice_candidate", {
         from: userId,
@@ -89,7 +101,7 @@ export function createSocketServer(server: http.Server) {
       });
     });
 
-    // HANGUP
+    // Hangup
     socket.on("webrtc_hangup", ({ conversationId }) => {
       socket.to(conversationId).emit("webrtc_hangup", {
         from: userId
@@ -99,4 +111,3 @@ export function createSocketServer(server: http.Server) {
 
   return io;
 }
-
