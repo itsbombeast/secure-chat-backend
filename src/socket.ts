@@ -16,7 +16,9 @@ export function createSocketServer(server: http.Server) {
     }
   });
 
-  // Authentication middleware
+  // Mapa konverzací → seznam socket.id
+  const roomMembers = new Map<string, Set<string>>();
+
   io.use((socket: AuthenticatedSocket, next) => {
     const token = socket.handshake.auth?.token;
     if (!token) return next(new Error("No auth token"));
@@ -32,94 +34,104 @@ export function createSocketServer(server: http.Server) {
 
   io.on("connection", (socket: AuthenticatedSocket) => {
     const userId = socket.userId!;
-    console.log("User connected:", userId);
+    console.log("User connected:", userId, socket.id);
 
-    // Join conversation room
-    socket.on("join_conversation", (data) => {
-      if (!data || !data.conversationId) return;
-      const { conversationId } = data;
+    // --- JOIN CONVERSATION ---
+    socket.on("join_conversation", ({ conversationId }) => {
       socket.join(conversationId);
+
+      if (!roomMembers.has(conversationId)) {
+        roomMembers.set(conversationId, new Set());
+      }
+
+      roomMembers.get(conversationId)!.add(socket.id);
     });
 
-    // ----- SIMPLE CALL SIGNALING -----
-
-    // volající zahájí hovor
-    socket.on("call_request", (data) => {
-      if (!data || !data.conversationId) return;
-      const { conversationId, withVideo } = data;
-
-      socket.to(conversationId).emit("call_incoming", {
-        from: userId,
-        withVideo: !!withVideo
-      });
+    // --- LEAVE ---
+    socket.on("disconnect", () => {
+      for (const [room, members] of roomMembers.entries()) {
+        members.delete(socket.id);
+      }
     });
 
-    // volaný přijme
-    socket.on("call_accept", (data) => {
-      if (!data || !data.conversationId) return;
-      const { conversationId } = data;
+    // --- CALL SIGNALING (skupinový) ---
 
-      socket.to(conversationId).emit("call_accepted", {
-        from: userId
-      });
+    socket.on("call_request", ({ conversationId, withVideo }) => {
+      const peers = roomMembers.get(conversationId);
+      if (!peers) return;
+
+      for (const peer of peers) {
+        if (peer !== socket.id) {
+          io.to(peer).emit("call_incoming", {
+            from: socket.id,
+            withVideo
+          });
+        }
+      }
     });
 
-    // volaný odmítne
-    socket.on("call_reject", (data) => {
-      if (!data || !data.conversationId) return;
-      const { conversationId } = data;
+    socket.on("call_accept", ({ conversationId }) => {
+      const peers = roomMembers.get(conversationId);
+      if (!peers) return;
 
-      socket.to(conversationId).emit("call_rejected", {
-        from: userId
-      });
+      for (const peer of peers) {
+        if (peer !== socket.id) {
+          io.to(peer).emit("call_accepted", {
+            from: socket.id
+          });
+        }
+      }
     });
 
-    // ----- WEBRTC SIGNALING -----
+    socket.on("call_reject", ({ conversationId }) => {
+      const peers = roomMembers.get(conversationId);
+      if (!peers) return;
 
-    socket.on("webrtc_offer", (data) => {
-      if (!data || !data.conversationId) return;
-      const { conversationId, offer } = data;
+      for (const peer of peers) {
+        if (peer !== socket.id) {
+          io.to(peer).emit("call_rejected", {
+            from: socket.id
+          });
+        }
+      }
+    });
 
-      socket.to(conversationId).emit("webrtc_offer", {
-        from: userId,
+    // --- WebRTC ---
+
+    socket.on("webrtc_offer", ({ to, offer }) => {
+      io.to(to).emit("webrtc_offer", {
+        from: socket.id,
         offer
       });
     });
 
-    socket.on("webrtc_answer", (data) => {
-      if (!data || !data.conversationId) return;
-      const { conversationId, answer } = data;
-
-      socket.to(conversationId).emit("webrtc_answer", {
-        from: userId,
+    socket.on("webrtc_answer", ({ to, answer }) => {
+      io.to(to).emit("webrtc_answer", {
+        from: socket.id,
         answer
       });
     });
 
-    socket.on("webrtc_ice_candidate", (data) => {
-      if (!data || !data.conversationId) return;
-      const { conversationId, candidate } = data;
-
-      socket.to(conversationId).emit("webrtc_ice_candidate", {
-        from: userId,
+    socket.on("webrtc_ice_candidate", ({ to, candidate }) => {
+      io.to(to).emit("webrtc_ice_candidate", {
+        from: socket.id,
         candidate
       });
     });
 
-    socket.on("webrtc_hangup", (data) => {
-      if (!data || !data.conversationId) return;
-      const { conversationId } = data;
+    socket.on("webrtc_hangup", ({ conversationId }) => {
+      const peers = roomMembers.get(conversationId);
+      if (!peers) return;
 
-      socket.to(conversationId).emit("webrtc_hangup", {
-        from: userId
-      });
-    });
-
-    socket.on("disconnect", () => {
-      console.log("User disconnected:", userId);
+      for (const peer of peers) {
+        if (peer !== socket.id) {
+          io.to(peer).emit("webrtc_hangup", {
+            from: socket.id
+          });
+        }
+      }
     });
   });
 
   return io;
 }
-
