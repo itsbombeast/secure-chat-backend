@@ -12,13 +12,14 @@ export function createSocketServer(server: http.Server) {
   const io = new Server(server, {
     cors: {
       origin: [FRONTEND_URL, "http://localhost:5173"],
-      credentials: true
-    }
+      credentials: true,
+    },
   });
 
-  // Mapa konverzací → seznam socket.id
+  // Mapa: conversationId -> sada socket.id
   const roomMembers = new Map<string, Set<string>>();
 
+  // Autentizace přes JWT
   io.use((socket: AuthenticatedSocket, next) => {
     const token = socket.handshake.auth?.token;
     if (!token) return next(new Error("No auth token"));
@@ -47,14 +48,30 @@ export function createSocketServer(server: http.Server) {
       roomMembers.get(conversationId)!.add(socket.id);
     });
 
-    // --- LEAVE ---
-    socket.on("disconnect", () => {
-      for (const [room, members] of roomMembers.entries()) {
+    // --- LEAVE CONVERSATION ---
+    socket.on("leave_conversation", ({ conversationId }) => {
+      socket.leave(conversationId);
+
+      const members = roomMembers.get(conversationId);
+      if (members) {
         members.delete(socket.id);
+        if (members.size === 0) {
+          roomMembers.delete(conversationId);
+        }
       }
     });
 
-    // --- CALL SIGNALING (skupinový) ---
+    // --- DISCONNECT ---
+    socket.on("disconnect", () => {
+      for (const [room, members] of roomMembers.entries()) {
+        members.delete(socket.id);
+        if (members.size === 0) {
+          roomMembers.delete(room);
+        }
+      }
+    });
+
+    // --- CALL SIGNALING (skupinové / přes conversationId) ---
 
     socket.on("call_request", ({ conversationId, withVideo }) => {
       const peers = roomMembers.get(conversationId);
@@ -64,7 +81,7 @@ export function createSocketServer(server: http.Server) {
         if (peer !== socket.id) {
           io.to(peer).emit("call_incoming", {
             from: socket.id,
-            withVideo
+            withVideo,
           });
         }
       }
@@ -77,7 +94,7 @@ export function createSocketServer(server: http.Server) {
       for (const peer of peers) {
         if (peer !== socket.id) {
           io.to(peer).emit("call_accepted", {
-            from: socket.id
+            from: socket.id,
           });
         }
       }
@@ -90,13 +107,13 @@ export function createSocketServer(server: http.Server) {
       for (const peer of peers) {
         if (peer !== socket.id) {
           io.to(peer).emit("call_rejected", {
-            from: socket.id
+            from: socket.id,
           });
         }
       }
     });
 
-      // --- WebRTC (podle conversationId = skupinové / room-based) ---
+    // --- WebRTC SIGNÁLY (používají conversationId, NE "to") ---
 
     socket.on("webrtc_offer", ({ conversationId, offer }) => {
       const peers = roomMembers.get(conversationId);
@@ -140,7 +157,6 @@ export function createSocketServer(server: http.Server) {
       }
     });
 
-
     socket.on("webrtc_hangup", ({ conversationId }) => {
       const peers = roomMembers.get(conversationId);
       if (!peers) return;
@@ -148,7 +164,7 @@ export function createSocketServer(server: http.Server) {
       for (const peer of peers) {
         if (peer !== socket.id) {
           io.to(peer).emit("webrtc_hangup", {
-            from: socket.id
+            from: socket.id,
           });
         }
       }
