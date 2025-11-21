@@ -96,28 +96,50 @@ export function createSocketServer(server: http.Server) {
       }
     });
 
-    // --- WebRTC ---
+      // --- WebRTC (podle conversationId = skupinové / room-based) ---
 
-    socket.on("webrtc_offer", ({ to, offer }) => {
-      io.to(to).emit("webrtc_offer", {
-        from: socket.id,
-        offer
-      });
+    socket.on("webrtc_offer", ({ conversationId, offer }) => {
+      const peers = roomMembers.get(conversationId);
+      if (!peers) return;
+
+      for (const peer of peers) {
+        if (peer !== socket.id) {
+          io.to(peer).emit("webrtc_offer", {
+            from: socket.id,
+            offer,
+          });
+        }
+      }
     });
 
-    socket.on("webrtc_answer", ({ to, answer }) => {
-      io.to(to).emit("webrtc_answer", {
-        from: socket.id,
-        answer
-      });
+    socket.on("webrtc_answer", ({ conversationId, answer }) => {
+      const peers = roomMembers.get(conversationId);
+      if (!peers) return;
+
+      for (const peer of peers) {
+        if (peer !== socket.id) {
+          io.to(peer).emit("webrtc_answer", {
+            from: socket.id,
+            answer,
+          });
+        }
+      }
     });
 
-    socket.on("webrtc_ice_candidate", ({ to, candidate }) => {
-      io.to(to).emit("webrtc_ice_candidate", {
-        from: socket.id,
-        candidate
-      });
+    socket.on("webrtc_ice_candidate", ({ conversationId, candidate }) => {
+      const peers = roomMembers.get(conversationId);
+      if (!peers) return;
+
+      for (const peer of peers) {
+        if (peer !== socket.id) {
+          io.to(peer).emit("webrtc_ice_candidate", {
+            from: socket.id,
+            candidate,
+          });
+        }
+      }
     });
+
 
     socket.on("webrtc_hangup", ({ conversationId }) => {
       const peers = roomMembers.get(conversationId);
