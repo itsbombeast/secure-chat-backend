@@ -15,13 +15,15 @@ import { errorHandler } from "./middleware/errorHandler";
 
 export const createApp = () => {
   const app = express();
-// Render.com / Vercel / Railway fix
-   app.set("trust proxy", 1);
 
-  // Render wake-up endpoint
+  // Render.com / Vercel / Railway fix
+  app.set("trust proxy", 1);
+
+  // 🔥 MUST BE FIRST — before rate limit, cors, cookieParser, helmet, anything
   app.get("/access-gate/status", (req, res) => {
     res.json({ ok: true, status: "awake" });
   });
+
   // 🔥 CORS
   app.use(
     cors({
@@ -66,12 +68,10 @@ export const createApp = () => {
   app.use("/api/access-gate", accessGateRoutes);
   app.use("/api/auth", authRoutes);
   app.use("/api/conversations", conversationRoutes);
-  app.use("/api/messages", messageRoutes); // ✅ only once
+  app.use("/api/messages", messageRoutes);
   app.use("/api/upload", uploadRoutes);
 
-  // Error handler
   app.use(errorHandler);
 
   return app;
 };
-
