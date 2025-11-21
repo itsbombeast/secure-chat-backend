@@ -16,10 +16,12 @@ import { errorHandler } from "./middleware/errorHandler";
 export const createApp = () => {
   const app = express();
 // Render.com / Vercel / Railway fix
-  app.set("trust proxy", 1);
-  // ✅ Fix for Render / Vercel / Fly.io proxy — REQUIRED for rate-limiter
-  app.set("trust proxy", 1);
+   app.set("trust proxy", 1);
 
+  // Render wake-up endpoint
+  app.get("/access-gate/status", (req, res) => {
+    res.json({ ok: true, status: "awake" });
+  });
   // 🔥 CORS
   app.use(
     cors({
