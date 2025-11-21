@@ -15,7 +15,8 @@ import { errorHandler } from "./middleware/errorHandler";
 
 export const createApp = () => {
   const app = express();
-
+// Render.com / Vercel / Railway fix
+  app.set("trust proxy", 1);
   // ✅ Fix for Render / Vercel / Fly.io proxy — REQUIRED for rate-limiter
   app.set("trust proxy", 1);
 
