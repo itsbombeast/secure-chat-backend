@@ -15,10 +15,8 @@ import { errorHandler } from "./middleware/errorHandler";
 
 export const createApp = () => {
   const app = express();
-
   // Render.com / Vercel / Railway fix
   app.set("trust proxy", 1);
-
   // 🔥 MUST BE FIRST — before rate limit, cors, cookieParser, helmet, anything
   app.get("/access-gate/status", (req, res) => {
     res.json({ ok: true, status: "awake" });
