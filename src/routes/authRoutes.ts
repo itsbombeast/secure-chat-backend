@@ -163,6 +163,43 @@ router.post("/password-reset/confirm", requireAccessGate, async (req, res) => {
 
   res.json({ ok: true });
 });
+// ---------------------------------------------------------
+// GET /api/auth/me
+// vrací přihlášeného uživatele + token
+// ---------------------------------------------------------
+router.get("/me", requireAccessGate, async (req, res) => {
+  try {
+    const token =
+      req.cookies?.token ||
+      req.headers.authorization?.split(" ")[1] ||
+      null;
+
+    if (!token) {
+      return res.status(401).json({ error: "Missing token" });
+    }
+
+    // ověř JWT + načti user
+    let payload;
+    try {
+      payload = jwt.verify(token, JWT_SECRET) as { userId: string };
+    } catch {
+      return res.status(401).json({ error: "Invalid token" });
+    }
+
+    const user = await getUserById(payload.userId);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    return res.json({
+      user,
+      token
+    });
+  } catch (err) {
+    console.error("/me error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 export default router;
 
