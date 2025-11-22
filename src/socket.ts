@@ -80,7 +80,7 @@ export function createSocketServer(server: http.Server) {
       for (const peer of peers) {
         if (peer !== socket.id) {
           io.to(peer).emit("call_incoming", {
-            from: socket.id,
+            from: socket.userId, // 🔥 OPRAVA: userId místo socket.id
             withVideo,
           });
         }
@@ -94,7 +94,7 @@ export function createSocketServer(server: http.Server) {
       for (const peer of peers) {
         if (peer !== socket.id) {
           io.to(peer).emit("call_accepted", {
-            from: socket.id,
+            from: socket.userId, // 🔥 OPRAVA
           });
         }
       }
@@ -107,7 +107,7 @@ export function createSocketServer(server: http.Server) {
       for (const peer of peers) {
         if (peer !== socket.id) {
           io.to(peer).emit("call_rejected", {
-            from: socket.id,
+            from: socket.userId, // 🔥 OPRAVA
           });
         }
       }
@@ -122,7 +122,7 @@ export function createSocketServer(server: http.Server) {
       for (const peer of peers) {
         if (peer !== socket.id) {
           io.to(peer).emit("webrtc_offer", {
-            from: socket.id,
+            from: socket.userId, // 🔥 OPRAVA
             offer,
           });
         }
@@ -136,7 +136,7 @@ export function createSocketServer(server: http.Server) {
       for (const peer of peers) {
         if (peer !== socket.id) {
           io.to(peer).emit("webrtc_answer", {
-            from: socket.id,
+            from: socket.userId, // 🔥 OPRAVA
             answer,
           });
         }
@@ -150,7 +150,7 @@ export function createSocketServer(server: http.Server) {
       for (const peer of peers) {
         if (peer !== socket.id) {
           io.to(peer).emit("webrtc_ice_candidate", {
-            from: socket.id,
+            from: socket.userId, // 🔥 OPRAVA
             candidate,
           });
         }
@@ -164,7 +164,7 @@ export function createSocketServer(server: http.Server) {
       for (const peer of peers) {
         if (peer !== socket.id) {
           io.to(peer).emit("webrtc_hangup", {
-            from: socket.id,
+            from: socket.userId, // 🔥 OPRAVA
           });
         }
       }
