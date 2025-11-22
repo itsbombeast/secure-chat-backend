@@ -39,6 +39,8 @@ export function createSocketServer(server: http.Server) {
 
     // --- JOIN CONVERSATION ---
     socket.on("join_conversation", ({ conversationId }) => {
+      console.log("join_conversation", { userId: socket.userId, conversationId, socketId: socket.id });
+
       socket.join(conversationId);
 
       if (!roomMembers.has(conversationId)) {
@@ -46,6 +48,8 @@ export function createSocketServer(server: http.Server) {
       }
 
       roomMembers.get(conversationId)!.add(socket.id);
+
+      console.log("roomMembers after join:", conversationId, Array.from(roomMembers.get(conversationId)!));
     });
 
     // --- LEAVE CONVERSATION ---
@@ -59,6 +63,8 @@ export function createSocketServer(server: http.Server) {
           roomMembers.delete(conversationId);
         }
       }
+
+      console.log("roomMembers after leave:", conversationId, members ? Array.from(members) : []);
     });
 
     // --- DISCONNECT ---
@@ -75,12 +81,13 @@ export function createSocketServer(server: http.Server) {
 
     socket.on("call_request", ({ conversationId, withVideo }) => {
       const peers = roomMembers.get(conversationId);
+      console.log("call_request", { fromUser: socket.userId, conversationId, peers: peers && Array.from(peers) });
       if (!peers) return;
 
       for (const peer of peers) {
         if (peer !== socket.id) {
           io.to(peer).emit("call_incoming", {
-            from: socket.userId, // 🔥 OPRAVA: userId místo socket.id
+            from: socket.userId, // 🔥 userId, ne socket.id
             withVideo,
           });
         }
@@ -94,7 +101,7 @@ export function createSocketServer(server: http.Server) {
       for (const peer of peers) {
         if (peer !== socket.id) {
           io.to(peer).emit("call_accepted", {
-            from: socket.userId, // 🔥 OPRAVA
+            from: socket.userId,
           });
         }
       }
@@ -107,13 +114,13 @@ export function createSocketServer(server: http.Server) {
       for (const peer of peers) {
         if (peer !== socket.id) {
           io.to(peer).emit("call_rejected", {
-            from: socket.userId, // 🔥 OPRAVA
+            from: socket.userId,
           });
         }
       }
     });
 
-    // --- WebRTC SIGNÁLY (používají conversationId, NE "to") ---
+    // --- WebRTC SIGNÁLY (používají conversationId) ---
 
     socket.on("webrtc_offer", ({ conversationId, offer }) => {
       const peers = roomMembers.get(conversationId);
@@ -122,7 +129,7 @@ export function createSocketServer(server: http.Server) {
       for (const peer of peers) {
         if (peer !== socket.id) {
           io.to(peer).emit("webrtc_offer", {
-            from: socket.userId, // 🔥 OPRAVA
+            from: socket.userId,
             offer,
           });
         }
@@ -136,7 +143,7 @@ export function createSocketServer(server: http.Server) {
       for (const peer of peers) {
         if (peer !== socket.id) {
           io.to(peer).emit("webrtc_answer", {
-            from: socket.userId, // 🔥 OPRAVA
+            from: socket.userId,
             answer,
           });
         }
@@ -150,7 +157,7 @@ export function createSocketServer(server: http.Server) {
       for (const peer of peers) {
         if (peer !== socket.id) {
           io.to(peer).emit("webrtc_ice_candidate", {
-            from: socket.userId, // 🔥 OPRAVA
+            from: socket.userId,
             candidate,
           });
         }
@@ -164,7 +171,7 @@ export function createSocketServer(server: http.Server) {
       for (const peer of peers) {
         if (peer !== socket.id) {
           io.to(peer).emit("webrtc_hangup", {
-            from: socket.userId, // 🔥 OPRAVA
+            from: socket.userId,
           });
         }
       }
