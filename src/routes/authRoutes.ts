@@ -1,5 +1,9 @@
 import { Router } from "express";
 import jwt from "jsonwebtoken";
+import multer from "multer";
+import path from "path";
+import bcrypt from "bcrypt";
+import { PrismaClient } from "@prisma/client";
 import {
   registerUser,
   authenticateUser,
@@ -12,6 +16,68 @@ import { requireAccessGate } from "../middleware/accessGateMiddleware";
 import { JWT_SECRET } from "../config";
 
 const router = Router();
+const prisma = new PrismaClient();
+
+// Nastavení nahrávání souborů
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, path.resolve(__dirname, "../../uploads")); // Ukládá do složky backend/uploads
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  },
+});
+const upload = multer({ storage });
+
+// --- UPDATE PROFILE ---
+router.put("/update", requireAccessGate, upload.single("profilePicture"), async (req, res) => {
+  try {
+    const token = req.cookies["auth_token"];
+    if (!token) return res.status(401).json({ error: "Unauthorized" });
+
+    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
+    const userId = decoded.userId;
+
+    const { username, email, password } = req.body;
+    const updateData: any = {};
+
+    if (username) updateData.username = username;
+    if (email) updateData.email = email;
+    
+    // Pokud uživatel poslal heslo a není prázdné
+    if (password && password.trim() !== "") {
+        if (!isStrongPassword(password)) {
+            return res.status(400).json({ error: "Password too weak" });
+        }
+        updateData.passwordHash = await bcrypt.hash(password, 10);
+    }
+
+    // Pokud byl nahrán soubor
+    if (req.file) {
+      updateData.profilePicture = req.file.filename;
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: updateData,
+    });
+
+    res.json({
+      user: {
+        id: updatedUser.id,
+        email: updatedUser.email,
+        username: updatedUser.username,
+        publicKeyPem: updatedUser.publicKeyPem,
+        profilePicture: updatedUser.profilePicture // Vracíme i obrázek
+      }
+    });
+
+  } catch (error) {
+    console.error("Update error:", error);
+    res.status(500).json({ error: "Failed to update profile" });
+  }
+});
 
 /**
  * REGISTER
@@ -35,7 +101,8 @@ router.post("/register", requireAccessGate, async (req, res, next) => {
         id: user.id,
         email: user.email,
         username: user.username,
-        publicKeyPem: user.publicKeyPem
+        publicKeyPem: user.publicKeyPem,
+        profilePicture: null
       }
     });
   } catch (err) {
@@ -54,24 +121,20 @@ router.post("/login", requireAccessGate, async (req, res, next) => {
       return res.status(400).json({ error: "Missing fields" });
     }
 
-    // authenticateUser returns { user, token } or null
     const result = await authenticateUser(identifier, password);
     if (!result) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
     const user = result.user;
-
-    // Create our own JWT (you could also reuse result.token if you prefer)
     const token = jwt.sign({ userId: user.id }, JWT_SECRET, {
       expiresIn: rememberMe ? "30d" : "1d"
     });
 
-    // IMPORTANT: cookie name must be "auth_token"
     res.cookie("auth_token", token, {
       httpOnly: true,
-      secure: true,       // HTTPS only
-      sameSite: "none",   // required for Vercel -> Fly.io cross-site
+      secure: true,
+      sameSite: "none",
       maxAge: rememberMe ? 1000 * 60 * 60 * 24 * 30 : undefined
     });
 
@@ -80,7 +143,8 @@ router.post("/login", requireAccessGate, async (req, res, next) => {
         id: user.id,
         email: user.email,
         username: user.username,
-        publicKeyPem: user.publicKeyPem
+        publicKeyPem: user.publicKeyPem,
+        profilePicture: user.profilePicture
       }
     });
   } catch (err) {
@@ -122,7 +186,8 @@ router.get("/me", requireAccessGate, async (req, res) => {
         id: user.id,
         email: user.email,
         username: user.username,
-        publicKeyPem: user.publicKeyPem
+        publicKeyPem: user.publicKeyPem,
+        profilePicture: user.profilePicture
       },
       token
     });
@@ -130,7 +195,6 @@ router.get("/me", requireAccessGate, async (req, res) => {
     return res.status(401).json({ error: "Unauthorized" });
   }
 });
-
 
 /**
  * PASSWORD RESET REQUEST
@@ -143,8 +207,6 @@ router.post("/password-reset/request", requireAccessGate, async (req, res) => {
   if (!result) {
     return res.json({ ok: true });
   }
-
-  // Normally you'd email result.token; for security we don't return it here
   res.json({ ok: true });
 });
 
@@ -165,10 +227,5 @@ router.post("/password-reset/confirm", requireAccessGate, async (req, res) => {
 
   res.json({ ok: true });
 });
-// ---------------------------------------------------------
-// GET /api/auth/me
-// vrací přihlášeného uživatele + token
-// ---------------------------------------------------------
 
 export default router;
-
