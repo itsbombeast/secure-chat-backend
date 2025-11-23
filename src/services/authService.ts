@@ -42,16 +42,24 @@ export const authenticateUser = async (identifier: string, password: string) => 
   const token = jwt.sign(
     { userId: user.id },
     JWT_SECRET,
-    { expiresIn: JWT_EXPIRES_IN_TYPED } // 👈 fixed here
+    { expiresIn: JWT_EXPIRES_IN_TYPED }
   );
 
   return { user, token };
 };
 
+// 🔥 ZDE BYLA CHYBA - Přidal jsem profilePicture: true
 export const getUserById = (id: string) =>
   prisma.user.findUnique({
     where: { id },
-    select: { id: true, email: true, username: true, publicKeyPem: true, createdAt: true }
+    select: { 
+      id: true, 
+      email: true, 
+      username: true, 
+      publicKeyPem: true, 
+      createdAt: true,
+      profilePicture: true // <--- TOTO CHYBĚLO
+    }
   });
 
 export const savePublicKey = async (userId: string, publicKeyPem: string) => {
@@ -103,4 +111,3 @@ export const resetPasswordWithToken = async (token: string, newPassword: string)
 
   return true;
 };
-
