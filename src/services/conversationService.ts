@@ -2,6 +2,16 @@ import { PrismaClient, ConversationRole } from "@prisma/client";
 
 export const prisma = new PrismaClient();
 
+// Definujeme společný výběr polí pro uživatele, abychom to nemuseli psát 5x
+// Zahrnuje profilePicture a vynechává heslo.
+const userSelect = {
+  id: true,
+  username: true,
+  email: true,
+  publicKeyPem: true,
+  profilePicture: true, // <--- TOTO JE KLÍČOVÉ PRO ZOBRAZENÍ OBRÁZKU
+};
+
 /* ============================================================
    GET USER CONVERSATIONS
 ============================================================ */
@@ -12,7 +22,11 @@ export const listUserConversations = async (userId: string) => {
       conversation: {
         include: {
           members: {
-            include: { user: true }
+            include: {
+              user: {
+                select: userSelect // Použijeme náš výběr polí
+              }
+            }
           }
         }
       }
@@ -55,7 +69,11 @@ export const createDirectConversation = async (
       }
     },
     include: {
-      members: { include: { user: true } }
+      members: {
+        include: {
+          user: { select: userSelect }
+        }
+      }
     }
   });
 
@@ -73,7 +91,11 @@ export const createDirectConversation = async (
       }
     },
     include: {
-      members: { include: { user: true } }
+      members: {
+        include: {
+          user: { select: userSelect }
+        }
+      }
     }
   });
 
@@ -122,7 +144,11 @@ export const createGroupConversation = async (
       members: { create: membersData }
     },
     include: {
-      members: { include: { user: true } }
+      members: {
+        include: {
+          user: { select: userSelect }
+        }
+      }
     }
   });
 
